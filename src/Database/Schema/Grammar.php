@@ -266,7 +266,7 @@ class Grammar extends IlluminateGrammar
             ) DROP TABLE ".$blueprint->getTable();
     }
 
-    public function compileTables()
+    public function compileTables($schema)
     {
         return "select
     o.name                           as name,
