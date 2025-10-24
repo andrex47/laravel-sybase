@@ -3,6 +3,7 @@
 namespace Uepg\LaravelSybase\Database\Schema;
 
 use Illuminate\Database\Schema\Grammars\Grammar as IlluminateGrammar;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Fluent;
 
 class Grammar extends IlluminateGrammar
@@ -12,8 +13,15 @@ class Grammar extends IlluminateGrammar
      *
      * @var array
      */
+    /**
+     * The possible column modifiers.
+     *
+     * @var array
+     */
     protected $modifiers = [
-        'Increment', 'Nullable', 'Default',
+        'Increment',
+        'Nullable',
+        'Default',
     ];
 
     /**
@@ -22,27 +30,19 @@ class Grammar extends IlluminateGrammar
      * @var array
      */
     protected array $serials = [
-        'bigInteger', 'integer', 'numeric',
+        'bigInteger',
+        'integer',
+        'numeric',
     ];
 
     /**
      * Compile the query to determine if a table exists.
-     * @param string|null $schema
-     * @param string $table
+     *
      * @return string
      */
-    public function compileTableExists($schema, $table)
+    public function compileTableExists($schema,$table)
     {
-        return sprintf('
-            SELECT
-                COUNT(*) AS [exists]
-            FROM
-                sysobjects
-            WHERE
-                type = \'U\'
-            AND
-                name = \'%s\';
-        ', $schema ? $schema.'.'.$table : $table);
+        return "SELECT id FROM sysobjects WHERE type = 'U' AND name = '$table'";
     }
 
     /**
@@ -105,7 +105,7 @@ class Grammar extends IlluminateGrammar
      * @return string
      *                Functions do compile the columns of a given table
      */
-    public function compileColumns($table)
+    public function compileColumns($schema,$table)
     {
         return "SELECT
            col.name,
@@ -141,7 +141,7 @@ class Grammar extends IlluminateGrammar
      * @return string
      *                Functions that return the indexes of a given table
      */
-    public function compileIndexes($table)
+    public function compileIndexes($schema,$table)
     {
         return "SELECT
         DISTINCT i.name,
@@ -239,8 +239,6 @@ class Grammar extends IlluminateGrammar
     /**
      * Compile a drop table command.
      *
-     * @param  Blueprint  $blueprint
-     * @param  Fluent  $command
      * @return string
      */
     public function compileDrop(Blueprint $blueprint, Fluent $command)
@@ -251,8 +249,6 @@ class Grammar extends IlluminateGrammar
     /**
      * Compile a drop table (if exists) command.
      *
-     * @param  Blueprint  $blueprint
-     * @param  Fluent  $command
      * @return string
      */
     public function compileDropIfExists(Blueprint $blueprint, Fluent $command)
@@ -283,7 +279,8 @@ class Grammar extends IlluminateGrammar
 
         $table = $this->wrapTable($blueprint);
 
-        return 'ALTER TABLE '.$table.' DROP COLUMN '.implode(', ', $columns);
+        return 'ALTER TABLE '.$table.
+            ' DROP COLUMN '.implode(', ', $columns);
     }
 
     /**
@@ -331,14 +328,15 @@ class Grammar extends IlluminateGrammar
     /**
      * Compile a drop foreign key command.
      *
-     * @param  Blueprint  $blueprint
-     * @param  Fluent  $command
+     * @param  \Illuminate\Database\Schema\Blueprint  $blueprint
+     * @param  \Illuminate\Support\Fluent  $command
      * @return string
      */
-    public function compileDropForeign(Blueprint $blueprint, Fluent $command)
+    public function compileDropForeign(Blueprint $blueprint, Fluent $command): string
     {
         $table = $this->wrapTable($blueprint);
 
+        // O SQL que você postou antes:
         return "ALTER TABLE {$table} DROP CONSTRAINT {$command->index}";
     }
 
@@ -665,7 +663,7 @@ class Grammar extends IlluminateGrammar
      */
     protected function modifyDefault(Blueprint $blueprint, Fluent $column)
     {
-        if (!is_null($column->default)) {
+        if (! is_null($column->default)) {
             return ' default '.$this->getDefaultValue($column->default);
         }
     }
@@ -679,7 +677,10 @@ class Grammar extends IlluminateGrammar
      */
     protected function modifyIncrement(Blueprint $blueprint, Fluent $column)
     {
-        if (in_array($column->type, $this->serials) && $column->autoIncrement) {
+        if (
+            in_array($column->type, $this->serials) &&
+            $column->autoIncrement
+        ) {
             return ' identity primary key';
         }
     }
