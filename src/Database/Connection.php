@@ -23,10 +23,71 @@ class Connection extends IlluminateConnection
      *
      * @var array
      */
-    private array $numeric = [
-        'int', 'numeric', 'bigint', 'integer', 'smallint', 'tinyint', 'decimal', 'double', 'float', 'real', 'bit',
-        'binary', 'varbinary', 'timestamp', 'money',
+    private $numeric = [
+        'int',
+        'numeric',
+        'bigint',
+        'integer',
+        'smallint',
+        'tinyint',
+        'decimal',
+        'double',
+        'float',
+        'real',
+        'bit',
+        'binary',
+        'varbinary',
+        'timestamp',
+        'money',
     ];
+
+
+    /**
+     * @var string The application charset
+     */
+    private $applicationCharset;
+
+    /**
+     * @var string The database charset
+     */
+    private $databaseCharset;
+
+    private $applicationEncoding = false;
+
+    /**
+     * Create a new database connection instance.
+     *
+     * @param  \PDO|\Closure  $pdo
+     * @param  string  $database
+     * @param  string  $tablePrefix
+     * @param  array  $config
+     * @return void
+     */
+    public function __construct($pdo, $database = '', $tablePrefix = '', array $config = [])
+    {
+        parent::__construct($pdo, $database, $tablePrefix, $config);
+        $this->configureExtraSettings($config);
+    }
+
+    /**
+     * Configures the encoding for the connection.
+     *
+     * @param array $config
+     * @return void
+     */
+    public function configureExtraSettings($config = [])
+    {
+        $this->applicationEncoding = key_exists('application_encoding',$config) ? $config['application_encoding'] : false;
+        if ($this->applicationEncoding)
+        {
+            if (!key_exists('application_charset',$config,) || !key_exists('database_charset',$config))
+            {
+                throw new \Exception('When application encoding is configured, you need to set up application_charset and database_charset');
+            }
+            $this->applicationCharset = $config['application_charset'];
+            $this->databaseCharset = $config['charset'];
+        }
+    }
 
     /**
      * Execute a Closure within a transaction.
@@ -54,10 +115,10 @@ class Connection extends IlluminateConnection
             $this->pdo->exec('COMMIT TRAN');
         }
 
-            // If we catch an exception, we will roll back so nothing gets messed
-            // up in the database. Then we'll re-throw the exception so it can
-            // be handled how the developer sees fit for their applications.
-        catch (Exception $e) {
+        // If we catch an exception, we will roll back so nothing gets messed
+        // up in the database. Then we'll re-throw the exception so it can
+        // be handled how the developer sees fit for their applications.
+        catch (\Exception|\PDOException $e) {
             $this->pdo->exec('ROLLBACK TRAN');
 
             throw $e;
@@ -69,9 +130,9 @@ class Connection extends IlluminateConnection
     /**
      * Run a select statement against the database.
      *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @param  bool  $useReadPdo
+     * @param string $query
+     * @param array $bindings
+     * @param bool $useReadPdo
      * @return array
      */
     public function select($query, $bindings = [], $useReadPdo = true)
@@ -84,8 +145,10 @@ class Connection extends IlluminateConnection
                 return [];
             }
 
-            $statement = $this->getPdo()
-                ->prepare($this->compileNewQuery($query, $bindings));
+            $statement = $this->getPdo()->prepare($this->compileNewQuery(
+                $query,
+                $bindings
+            ));
 
             $statement->execute();
 
@@ -95,30 +158,30 @@ class Connection extends IlluminateConnection
                 do {
                     $result += $statement->fetchAll($this->getFetchMode());
                 } while ($statement->nextRowset());
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
             }
 
             $result = [...$result];
 
             $application_encoding = config('database.sybase.application_encoding');
-            if (!$application_encoding) {
+            if (is_null($application_encoding) || $application_encoding == false) {
                 return $result;
             }
             $database_charset = config('database.sybase.database_charset');
             $application_charset = config('database.sybase.application_charset');
             if (is_null($database_charset) || is_null($application_charset)) {
-                throw new Exception('[SYBASE] Database Charset and App Charset not set');
+                throw new \Exception('[SYBASE] Database Charset and App Charset not set');
             }
             foreach ($result as &$r) {
                 foreach ($r as $k => &$v) {
-                    $v = gettype($v) === 'string' ? mb_convert_encoding($v, $application_charset,
-                        $database_charset) : $v;
+                    $v = gettype($v) === 'string' ? mb_convert_encoding($v, $application_charset, $database_charset) : $v;
                 }
             }
 
             return $result;
         });
     }
+
 
     /**
      * Set new bindings with specified column types to Sybase.
@@ -129,13 +192,14 @@ class Connection extends IlluminateConnection
      *
      * @link http://stackoverflow.com/questions/2718628/pdoparam-for-type-decimal
      *
-     * @param  string  $query
-     * @param  array  $bindings
+     * @param string $query
+     * @param array $bindings
      * @return string $query
-     * @throws Exception
      */
-    private function compileNewQuery(string $query, array $bindings)
+    private function compileNewQuery($query, $bindings)
     {
+        $newQuery = '';
+
         $bindings = $this->compileBindings($query, $bindings);
         $partQuery = explode('?', $query);
 
@@ -143,28 +207,32 @@ class Connection extends IlluminateConnection
         $bindings = array_map(fn($v) => gettype($v) === 'string' ? "'{$v}'" : $v, $bindings);
         $bindings = array_map(fn($v) => gettype($v) === 'NULL' ? 'NULL' : $v, $bindings);
 
-        $newQuery = join(array_map(fn($k1, $k2) => $k1.$k2, $partQuery, $bindings));
+        $newQuery = join(array_map(fn($k1, $k2) => $k1 . $k2, $partQuery, $bindings));
         $newQuery = str_replace('[]', '', $newQuery);
         $application_encoding = config('database.sybase.application_encoding');
-        if (!$application_encoding) {
+
+        if (is_null($application_encoding) || $application_encoding == false) {
             return $newQuery;
         }
         $database_charset = config('database.sybase.database_charset');
         $application_charset = config('database.sybase.application_charset');
         if (is_null($database_charset) || is_null($application_charset)) {
-            throw new Exception('[SYBASE] Database Charset and App Charset not set');
+            throw new \Exception('[SYBASE] Database Charset and App Charset not set');
         }
-        return mb_convert_encoding($newQuery, $database_charset, $application_charset);
+        $newQuery = mb_convert_encoding($newQuery, $database_charset, $application_charset);
+
+        return $newQuery;
     }
+
 
     /**
      * Set new bindings with specified column types to Sybase.
      *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @return array $newBinds
+     * @param string $query
+     * @param array $bindings
+     * @return mixed $newBinds
      */
-    private function compileBindings(string $query, array $bindings)
+    private function compileBindings($query, $bindings)
     {
         if (count($bindings) == 0) {
             return [];
@@ -179,6 +247,7 @@ class Connection extends IlluminateConnection
             return $bindings;
         }
     }
+
 
     /**
      * Compile the bindings for select/insert/update/delete.
@@ -210,7 +279,7 @@ class Connection extends IlluminateConnection
             }
         }
 
-        $cache = $builder->connection->config['cache_tables'];
+        $cache = key_exists('cache_tables',$builder->connection->config) ? $builder->connection->config['cache_tables'] : false;
         $types = [];
 
         foreach ($arrTables as $tables) {
@@ -305,7 +374,6 @@ class Connection extends IlluminateConnection
                 }
             }
         }
-
         return $keys;
     }
 
@@ -347,11 +415,7 @@ class Connection extends IlluminateConnection
         }
     }
 
-    /**
-     * Get the default fetch mode for the connection.
-     *
-     * @return int
-     */
+
     public function getFetchMode()
     {
         return $this->fetchMode;
@@ -451,28 +515,37 @@ class Connection extends IlluminateConnection
      *
      * @param  string  $query
      * @param  array  $bindings
-     * @param  Closure  $callback
+     * @param  \Closure  $callback
      * @return mixed
      *
-     * @throws QueryException
+     * @throws \Illuminate\Database\QueryException
      */
     protected function runQueryCallback($query, $bindings, Closure $callback)
     {
         try {
             $result = $callback($query, $bindings);
 
-            if ($result instanceof PDOStatement) {
+            if ($result instanceof \PDOStatement) {
                 $errorInfo = $result->errorInfo();
                 if (isset($errorInfo[0]) && $errorInfo[0] !== '00000') {
-                    $finalErrorMessage = sprintf('SQLSTATE[%s] [%d] %s', $errorInfo[0], (int) $errorInfo[1],
-                        trim(preg_replace(['/^\[\d+]\s\(severity\s\d+\)\s/', '/\s+/'], ['', ' '], $errorInfo[2])));
-                    throw new PDOException($finalErrorMessage, (int) $errorInfo[1]);
+                    $finalErrorMessage = sprintf(
+                        'SQLSTATE[%s] [%d] %s',
+                        $errorInfo[0],
+                        (int)$errorInfo[1],
+                        trim(preg_replace(['/^\[\d+\]\s\(severity\s\d+\)\s/', '/\s+/'], ['', ' '], $errorInfo[2]))
+                    );
+                    throw new \PDOException($finalErrorMessage, (int)$errorInfo[1]);
                 }
             }
             return $result;
 
         } catch (Throwable $e) {
-            throw new QueryException($this->getName(), $query, $this->prepareBindings($bindings), $e);
+            throw new QueryException(
+                $this->getName(),
+                $query,
+                $this->prepareBindings($bindings),
+                $e
+            );
         }
     }
 }
