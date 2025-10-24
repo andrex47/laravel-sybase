@@ -130,9 +130,9 @@ class Connection extends IlluminateConnection
     /**
      * Run a select statement against the database.
      *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @param  bool  $useReadPdo
+     * @param string $query
+     * @param array $bindings
+     * @param bool $useReadPdo
      * @return array
      */
     public function select($query, $bindings = [], $useReadPdo = true)
@@ -145,8 +145,10 @@ class Connection extends IlluminateConnection
                 return [];
             }
 
-            $statement = $this->getPdo()
-                ->prepare($this->compileNewQuery($query, $bindings));
+            $statement = $this->getPdo()->prepare($this->compileNewQuery(
+                $query,
+                $bindings
+            ));
 
             $statement->execute();
 
@@ -156,30 +158,30 @@ class Connection extends IlluminateConnection
                 do {
                     $result += $statement->fetchAll($this->getFetchMode());
                 } while ($statement->nextRowset());
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
             }
 
             $result = [...$result];
 
             $application_encoding = config('database.sybase.application_encoding');
-            if (!$application_encoding) {
+            if (is_null($application_encoding) || $application_encoding == false) {
                 return $result;
             }
             $database_charset = config('database.sybase.database_charset');
             $application_charset = config('database.sybase.application_charset');
             if (is_null($database_charset) || is_null($application_charset)) {
-                throw new Exception('[SYBASE] Database Charset and App Charset not set');
+                throw new \Exception('[SYBASE] Database Charset and App Charset not set');
             }
             foreach ($result as &$r) {
                 foreach ($r as $k => &$v) {
-                    $v = gettype($v) === 'string' ? mb_convert_encoding($v, $application_charset,
-                        $database_charset) : $v;
+                    $v = gettype($v) === 'string' ? mb_convert_encoding($v, $application_charset, $database_charset) : $v;
                 }
             }
 
             return $result;
         });
     }
+
 
     /**
      * Set new bindings with specified column types to Sybase.
@@ -190,13 +192,14 @@ class Connection extends IlluminateConnection
      *
      * @link http://stackoverflow.com/questions/2718628/pdoparam-for-type-decimal
      *
-     * @param  string  $query
-     * @param  array  $bindings
+     * @param string $query
+     * @param array $bindings
      * @return string $query
-     * @throws Exception
      */
-    private function compileNewQuery(string $query, array $bindings)
+    private function compileNewQuery($query, $bindings)
     {
+        $newQuery = '';
+
         $bindings = $this->compileBindings($query, $bindings);
         $partQuery = explode('?', $query);
 
@@ -204,28 +207,32 @@ class Connection extends IlluminateConnection
         $bindings = array_map(fn($v) => gettype($v) === 'string' ? "'{$v}'" : $v, $bindings);
         $bindings = array_map(fn($v) => gettype($v) === 'NULL' ? 'NULL' : $v, $bindings);
 
-        $newQuery = join(array_map(fn($k1, $k2) => $k1.$k2, $partQuery, $bindings));
+        $newQuery = join(array_map(fn($k1, $k2) => $k1 . $k2, $partQuery, $bindings));
         $newQuery = str_replace('[]', '', $newQuery);
         $application_encoding = config('database.sybase.application_encoding');
-        if (!$application_encoding) {
+
+        if (is_null($application_encoding) || $application_encoding == false) {
             return $newQuery;
         }
         $database_charset = config('database.sybase.database_charset');
         $application_charset = config('database.sybase.application_charset');
         if (is_null($database_charset) || is_null($application_charset)) {
-            throw new Exception('[SYBASE] Database Charset and App Charset not set');
+            throw new \Exception('[SYBASE] Database Charset and App Charset not set');
         }
-        return mb_convert_encoding($newQuery, $database_charset, $application_charset);
+        $newQuery = mb_convert_encoding($newQuery, $database_charset, $application_charset);
+
+        return $newQuery;
     }
+
 
     /**
      * Set new bindings with specified column types to Sybase.
      *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @return array $newBinds
+     * @param string $query
+     * @param array $bindings
+     * @return mixed $newBinds
      */
-    private function compileBindings(string $query, array $bindings)
+    private function compileBindings($query, $bindings)
     {
         if (count($bindings) == 0) {
             return [];
@@ -240,6 +247,7 @@ class Connection extends IlluminateConnection
             return $bindings;
         }
     }
+
 
     /**
      * Compile the bindings for select/insert/update/delete.
@@ -407,122 +415,6 @@ class Connection extends IlluminateConnection
         }
     }
 
-    /**
-     * Get the default fetch mode for the connection.
-     * Set new bindings with specified column types to Sybase.
-     *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @return mixed $newBinds
-     */
-    private function compileBindings($query, $bindings)
-    {
-        if (count($bindings) == 0) {
-            return [];
-        }
-
-        $bindings = $this->prepareBindings($bindings);
-        $builder = $this->queryGrammar->getBuilder();
-
-        if ($builder != null) {
-            return $this->compile($builder);
-        } else {
-            return $bindings;
-        }
-    }
-
-    /**
-     * Set new bindings with specified column types to Sybase.
-     *
-     * It could compile again from bindings using PDO::PARAM, however, it has
-     * no constants that deal with decimals, so the only way would be to put
-     * PDO::PARAM_STR, which would put quotes.
-     *
-     * @link http://stackoverflow.com/questions/2718628/pdoparam-for-type-decimal
-     *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @return string $query
-     */
-    private function compileNewQuery($query, $bindings)
-    {
-        $newQuery = '';
-
-        $bindings = $this->compileBindings($query, $bindings);
-        $partQuery = explode('?', $query);
-
-        $bindings = array_map(fn ($v) => gettype($v) === 'string' ? str_replace('\'', '\'\'', $v) : $v, $bindings);
-        $bindings = array_map(fn ($v) => gettype($v) === 'string' ? "'{$v}'" : $v, $bindings);
-        $bindings = array_map(fn ($v) => gettype($v) === 'NULL' ? 'NULL' : $v, $bindings);
-
-        $newQuery = join(array_map(fn ($k1, $k2) => $k1.$k2, $partQuery, $bindings));
-        $newQuery = str_replace('[]', '', $newQuery);
-        $application_encoding = $this->applicationEncoding;
-        if (is_null($application_encoding) || $application_encoding == false) {
-            return $newQuery;
-        }
-        $database_charset = $this->databaseCharset;
-        $application_charset = $this->applicationCharset;
-        if (is_null($database_charset) || is_null($application_charset)) {
-            throw new \Exception('[SYBASE] Database Charset and App Charset not set');
-        }
-        $newQuery = mb_convert_encoding($newQuery, $database_charset, $application_charset);
-
-        return $newQuery;
-    }
-
-
-    /**
-     * Run a select statement against the database.
-     *
-     * @param  string  $query
-     * @param  array  $bindings
-     * @param  bool  $useReadPdo
-     * @return array
-     */
-    public function select($query, $bindings = [], $useReadPdo = true)
-    {
-        return $this->run($query, $bindings, function (
-            $query,
-            $bindings
-        ) {
-            if ($this->pretending()) {
-                return [];
-            }
-
-            $statement = $this->getPdo()->prepare($this->compileNewQuery(
-                $query,
-                $bindings
-            ));
-
-            $statement->execute();
-
-            $result = [];
-
-            do {
-                $result += $statement->fetchAll($this->getFetchMode());
-            } while ($statement->nextRowset());
-
-            $result = [...$result];
-
-            $application_encoding = $this->applicationEncoding;
-            if (is_null($application_encoding) || $application_encoding == false) {
-                return $result;
-            }
-            $database_charset = $this->databaseCharset;
-            $application_charset = $this->applicationCharset;
-            if (is_null($database_charset) || is_null($application_charset)) {
-                throw new \Exception('[SYBASE] Database Charset and App Charset not set');
-            }
-            foreach ($result as &$r) {
-                foreach ($r as $k => &$v) {
-                    $v = gettype($v) === 'string' ? mb_convert_encoding($v, $application_charset, $database_charset) : $v;
-                }
-            }
-
-            return $result;
-        });
-    }
 
     public function getFetchMode()
     {
