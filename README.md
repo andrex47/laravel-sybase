@@ -16,7 +16,7 @@ Add the following in the require section of your **composer.json**:
 ### Laravel 7 <=
 "uepg/laravel-sybase": "~2"
 
-### Laravel 8 >= 10
+### Laravel 8 >= and <= 10
 "uepg/laravel-sybase": "~4"
 
 ### Laravel 11 >=
