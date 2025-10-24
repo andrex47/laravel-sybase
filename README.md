@@ -8,15 +8,20 @@
 
 * Enables use of multiple kinds of fields.
 * Use default eloquent: works with odbc and dblib!
-* Migrations! (WIP - Work in Progress)
 
 ## Install
 
 Add the following in the require section of your **composer.json**:
 
+### Laravel 7 <=
+"uepg/laravel-sybase": "~2"
+
+### Laravel 8 >= 10
+"uepg/laravel-sybase": "~4"
+
 ### Laravel 11 >=
 ```json
-"uepg/laravel-sybase": "~5.0"
+"uepg/laravel-sybase": "~5"
 ```
 
 Update the package dependencies executing:
